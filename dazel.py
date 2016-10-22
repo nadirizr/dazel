@@ -5,6 +5,8 @@ import os
 import sys
 import types
 
+import docker
+
 
 DAZEL_RC_FILE = ".dazelrc"
 DAZEL_RUN_FILE = ".dazel_run"
@@ -17,7 +19,7 @@ DEFAULT_LOCAL_DOCKERFILE = "Dockerfile.dazel"
 DEFAULT_REMOTE_RPOSITORY = "dazel"
 DEFAULT_DIRECTORY = os.getcwd()
 DEFAULT_COMMAND = "/usr/bin/bazel"
-DEFAULT_VOLUMES = []
+DEFAULT_VOLUMES = {}
 DEFAULT_PORTS = []
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
@@ -66,6 +68,8 @@ class DockerInstance:
         self.docker_machine = docker_machine
         self.dazel_run_file = dazel_run_file
 
+        self._docker = docker.Client()
+
         if self.docker_compose_file:
             self.network = "%s_%s" % (docker_compose_project_name, network)
 
@@ -106,6 +110,8 @@ class DockerInstance:
                 dazel_run_file=config.get("DAZEL_RUN_FILE", DAZEL_RUN_FILE))
 
     def send_command(self, args):
+        # TODO(misha): Move to using docker-py. Currently there's a problem, since there's no way to
+        # pass Ctrl+C (KeyboardInterrupt) into an exec command.
         command = "docker exec -i %s %s %s %s %s %s %s" % (
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
@@ -125,8 +131,6 @@ class DockerInstance:
 
     def start(self):
         """Starts the dazel docker container."""
-        rc = 0
-
         # Verify that the docker executable exists.
         if not self._docker_exists():
             print ("ERROR: Docker executable could not be found!")
@@ -134,15 +138,13 @@ class DockerInstance:
 
         # Build or pull the relevant dazel image.
         if os.path.exists(self.dockerfile):
-            rc = self._build()
+            if not self._build():
+                return False
         else:
-            rc = self._pull()
             # If we have the image, don't stop everything just because we
             # couldn't pull.
-            if rc and self._image_exists():
-                rc = 0
-        if rc:
-            return rc
+            if not self._pull() and not self._image_exists():
+                return False
 
         # If given a docker-compose file, start the services needed to run.
         if self.docker_compose_file and self._docker_compose_exists():
@@ -168,71 +170,75 @@ class DockerInstance:
 
     def is_running(self):
         """Checks if the container is currently running."""
-        command = "docker ps | grep \"\\<%s\\>\" >/dev/null 2>&1" % (self.instance_name)
-        command = self._with_docker_machine(command)
+        container = None
+        try:
+            container = self._docker.inspect_container(self.instance_name)
+        except docker.errors.NotFound:
+            return False
 
         # If we have a directory, make sure the running container is mapped to
         # the same one (if not we need to create a new container mapped to the
         # correct folder).
         if self.directory:
-            real_directory = os.path.realpath(self.directory)
-            command += (" && docker inspect \"%s\" | grep \"%s:%s\" >/dev/null 2>&1" %
-                        (self.instance_name, real_directory, real_directory))
+            bind_str = "%s:%s" % ((os.path.realpath(self.directory),) * 2)
+            if bind_str not in container["HostConfig"]["Binds"]:
+                return False
 
         # If we have a network, make sure the running container is using the
         # correct network (if not we need to create a new container on the
         # correct network).
         # Note: with proper naming conventions this shouldn't happen much.
-        if self.network:
-            command += (" && docker inspect \"%s\" | grep '\"NetworkMode\": \"%s\"' >/dev/null 2>&1" %
-                        (self.instance_name, self.network))
-            
-        rc = os.system(command)
-        return (rc == 0)
+        if self.network and self.network != container["HostConfig"]["NetworkMode"]:
+            return False
+
+        return True
 
     def _image_exists(self):
         """Checks if the dazel image exists in the local repository."""
-        command = "docker images | grep \"\\<%s/%s\\>\" >/dev/null 2>&1" % (
-            self.repository, self.image_name)
-        command = self._with_docker_machine(command)
-        rc = os.system(command)
-        return (rc == 0)
+        return bool(self._docker.images("%s/%s" % (self.repository, self.image_name)))
 
     def _build(self):
         """Builds the dazel image from the local dockerfile."""
         if not os.path.exists(self.dockerfile):
             raise RuntimeError("No Dockerfile to build the dazel image from.")
 
-        command = "docker build -t %s/%s -f %s %s" % (
-            self.repository, self.image_name, self.dockerfile, self.directory)
-        command = self._with_docker_machine(command)
-        return os.system(command)
+        # TODO(misha): Consider uploading a tar file with the context, instead of letting docker
+        #              figure it out by itself.
+        for line in self._docker.build(path=self.directory,
+                                       tag="%s/%s" % (self.repository, self.image_name),
+                                       dockerfile=self.dockerfile,
+                                       decode=True):
+            if "error" in line:
+                print("ERROR:", line["error"])
+                return False
+            print(line["stream"], end="")
+
+        return True
 
     def _pull(self):
         """Pulls the relevant image from the dockerhub repository."""
         if not self.repository:
             raise RuntimeError("No repository to pull the dazel image from.")
 
-        command = "docker pull %s/%s" % (self.repository, self.image_name)
-        command = self._with_docker_machine(command)
-        return os.system(command)
+        for line in self._docker.pull("%s/%s" % (self.repository, self.image_name),
+                                      stream=True, debug=True):
+            if "error" in line:
+                print("ERROR:", item["error"])
+                return False
+            print(item["status"])
+
+        return True
 
     def _network_exists(self):
         """Checks if the network we need to use exists."""
-        command = "docker network ls | grep \"\\<%s\\>\" >/dev/null 2>&1" % (
-            self.network)
-        command = self._with_docker_machine(command)
-        rc = os.system(command)
-        return (rc == 0)
+        return bool(self._docker.networks(("^%s$" % self.network,)))
 
     def _start_network(self):
         """Starts the docker network the container will use."""
         if not self.network:
-            return 0
+            return True
 
-        command = "docker network create %s" % self.network
-        command = self._with_docker_machine(command)
-        return os.system(command)
+        return bool(self.create_network(self.network))
 
     def _start_run_deps(self):
         """Starts the containers that are marked as runtime dependencies."""
@@ -282,49 +288,57 @@ class DockerInstance:
     def _run_container(self):
         """Runs the container itself."""
         print ("Starting docker container '%s'..." % self.instance_name)
-        command = "docker stop %s >/dev/null 2>&1 ; " % (self.instance_name)
-        command += "docker rm %s >/dev/null 2>&1 ; " % (self.instance_name)
-        command += "docker run -id --name=%s %s %s %s %s %s %s%s %s" % (
-            self.instance_name,
-            "--privileged" if self.docker_run_privileged else "",
-            ("-w %s" % os.path.realpath(self.directory)) if self.directory else "",
-            self.volumes,
-            self.ports,
-            ("--net=%s" % self.network) if self.network else "",
-            ("%s/" % self.repository) if self.repository else "",
-            self.image_name,
-            self.run_command if self.run_command else "")
-        command = self._with_docker_machine(command)
-        rc = os.system(command)
-        if rc:
-            return rc
+
+        try:
+            self._docker.stop(self.instance_name)
+            self._docker.remove_container(self.instance_name)
+        except docker.errors.NotFound:
+            pass
+
+        image = "%s%s" % (("%s/" % self.repository) if self.repository else "", self.image_name)
+        workdir = os.path.realpath(self.directory) if self.directory else None
+        container = self._docker.create_container(
+            image=image,
+            command=self.run_command,
+            detach=True,
+            stdin_open=True,
+            name=self.instance_name,
+            working_dir=workdir,
+            ports=list(self.ports.keys()),
+            host_config=self._docker.create_host_config(privileged=self.docker_run_privileged,
+                                                        port_bindings=self.ports,
+                                                        binds=self.volumes),
+            networking_config=self._docker.create_networking_config({
+                self.network: self._docker.create_endpoint_config()
+            }) if self.network else None,
+        )
+
+        self._docker.start(container["Id"])
 
         # Touch the dazel run file to change the timestamp.
         if self.dazel_run_file:
             open(self.dazel_run_file, "w").write(self.instance_name + "\n")
-            print ("Done.")
+        print ("Done.")
 
-        return rc
+        return 0
 
     def _add_volumes(self, volumes):
         """Add the given volumes to the run string, and the bazel volumes we need anyway."""
         # This can only be intentional in code, so ignore None volumes.
-        self.volumes = ""
+        self.volumes = {}
         if volumes is None:
             return
 
         # DAZEL_VOLUMES can be a python iterable or a comma-separated string.
         if isinstance(volumes, str):
-            volumes = [v.strip() for v in volumes.split(",")]
-        elif volumes and not isinstance(volumes, types.Iterable):
+            volumes = dict(v.strip().split(":") for v in volumes.split(","))
+        elif volumes and not isinstance(volumes, dict):
             raise RuntimeError("DAZEL_VOLUMES must be comma-separated string "
-                               "or python iterable of strings")
+                               "or python dictionary of strings")
 
         # Find the real source and output directories.
         real_directory = os.path.realpath(self.directory)
-        volumes += [
-            "%s:%s" % (real_directory, real_directory),
-        ]
+        volumes[real_directory] = real_directory
 
         # If the user hasn't explicitly set a DAZEL_BAZEL_USER_OUTPUT_ROOT for
         # bazel, set it from the output directory so that we get the build
@@ -353,23 +367,22 @@ class DockerInstance:
                                user_output_path))
               if not os.path.isdir(real_user_output_path):
                   os.makedirs(real_user_output_path)
-              volumes += ["%s:%s" % (real_user_output_path,
-                                     real_user_output_path)]
+              volumes[real_user_output_path] = real_user_output_path
         elif real_bazelout:
-            volumes += ["%s:%s" % (real_bazelout, real_bazelout)]
+            volumes[real_bazelout] = real_bazelout
             self.bazel_output_base = real_bazelout
 
         # Make sure the path exists on the host.
         if self.bazel_user_output_root and not os.path.isdir(self.bazel_user_output_root):
             os.makedirs(self.bazel_user_output_root)
 
-        # Calculate the volumes string.
-        self.volumes = '-v "%s"' % '" -v "'.join(volumes)
+        # Set the volumes dict.
+        self.volumes = volumes
 
     def _add_ports(self, ports):
         """Add the given ports to the run string."""
         # This can only be intentional in code, so ignore None volumes.
-        self.ports = ""
+        self.ports = {}
         if not ports:
             return
 
@@ -381,7 +394,11 @@ class DockerInstance:
                                "or python iterable of strings")
 
         # Find the real source and output directories.
-        self.ports = '-p "%s"' % '" -p "'.join(ports)
+        for port_def in ports:
+            port_tuple = port_def.split(":")
+            self.ports[int(port_tuple[-1])] = int(port_tuple[-2])
+            if len(port_tuple) == 3:
+                self.ports[int(port_tuple[-1])] = (port_tuple[0], int(port_tuple[-2]))
 
     def _add_run_deps(self, run_deps):
         """Adds the necessary runtime container dependencies to launch."""
