@@ -456,7 +456,7 @@ class DockerInstance:
         return (rc == 0)
 
     def _with_docker_machine(self, cmd):
-        if self.docker_machine is None:
+        if self.docker_machine is None or not self._command_exists("docker-machine"):
             return cmd
         return "eval $(docker-machine env %s) && (%s)" % (self.docker_machine, cmd)
 
