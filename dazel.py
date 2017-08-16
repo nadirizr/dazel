@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import hashlib
+import logging
 import os
 import subprocess
 import sys
@@ -36,6 +37,9 @@ DEFAULT_BAZEL_RC_FILE = ""
 DEFAULT_DOCKER_RUN_PRIVILEGED = False
 DEFAULT_DOCKER_MACHINE = None
 DEFAULT_WORKSPACE_HEX = False
+
+
+logger = logging.getLogger("dazel")
 
 
 class DockerInstance:
@@ -143,7 +147,7 @@ class DockerInstance:
 
         # Verify that the docker executable exists.
         if not self._docker_exists():
-            print ("ERROR: Docker executable could not be found!")
+            logger.error("ERROR: Docker executable could not be found!")
             return 1
 
         # Build or pull the relevant dazel image.
@@ -167,7 +171,7 @@ class DockerInstance:
 
             # Setup the network if necessary.
             if not self._network_exists():
-                print ("Creating network: '%s'" % self.network)
+                logger.info("Creating network: '%s'" % self.network)
                 rc = self._start_network()
             if rc:
                 return rc
@@ -275,8 +279,8 @@ class DockerInstance:
                 docker_machine=self.docker_machine,
                 dazel_run_file=None)
             if not run_dep_instance.is_running():
-                print ("Starting run dependency: '%s' (name: '%s')" %
-                       (run_dep_image, run_dep_name))
+                logger.info ("Starting run dependency: '%s' (name: '%s')" %
+                             (run_dep_image, run_dep_name))
                 run_dep_instance._run_container()
 
     def _start_compose_services(self):
@@ -298,7 +302,7 @@ class DockerInstance:
 
     def _run_container(self):
         """Runs the container itself."""
-        print ("Starting docker container '%s'..." % self.instance_name)
+        logger.info("Starting docker container '%s'..." % self.instance_name)
         command = "docker stop %s >/dev/null 2>&1 ; " % (self.instance_name)
         command += "docker rm %s >/dev/null 2>&1 ; " % (self.instance_name)
         command += "docker run -id --name=%s %s %s %s %s %s %s%s %s" % (
@@ -319,7 +323,7 @@ class DockerInstance:
         # Touch the dazel run file to change the timestamp.
         if self.dazel_run_file:
             open(self.dazel_run_file, "w").write(self.instance_name + "\n")
-            print ("Done.")
+            logger.info("Done.")
 
         return rc
 
