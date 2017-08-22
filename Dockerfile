@@ -1,7 +1,7 @@
 FROM debian:jessie-backports
 MAINTAINER Nadir Izrael nadir.izr@gmail.com
 
-ENV BAZEL_VERSION 0.4.5
+ENV BAZEL_VERSION 0.5.3
 
 RUN echo 'APT::Install-Recommends "false";' >> /etc/apt/apt.conf.d/99_norecommends \
  && echo 'APT::AutoRemove::RecommendsImportant "false";' >> /etc/apt/apt.conf.d/99_norecommends \

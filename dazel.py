@@ -15,6 +15,7 @@ BAZEL_WORKSPACE_FILE = "WORKSPACE"
 DEFAULT_INSTANCE_NAME = "dazel"
 DEFAULT_IMAGE_NAME = "dazel"
 DEFAULT_RUN_COMMAND = "/bin/bash"
+DEFAULT_DOCKER_COMMAND = "docker"
 DEFAULT_LOCAL_DOCKERFILE = "Dockerfile.dazel"
 DEFAULT_REMOTE_REPOSITORY = "dazel"
 DEFAULT_DIRECTORY = os.getcwd()
@@ -50,7 +51,7 @@ class DockerInstance:
     It streams the output directly and blocks until the command finishes.
     """
 
-    def __init__(self, instance_name, image_name, run_command, dockerfile,
+    def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
                        repository, directory, command, volumes, ports, network,
                        run_deps, docker_compose_file, docker_compose_project_name,
                        docker_compose_services, bazel_user_output_root, bazel_rc_file,
@@ -60,6 +61,7 @@ class DockerInstance:
         self.instance_name = instance_name
         self.image_name = image_name
         self.run_command = run_command
+        self.docker_command = docker_command
         self.dockerfile = dockerfile
         self.repository = repository
         self.directory = directory
@@ -98,6 +100,7 @@ class DockerInstance:
                 instance_name=config.get("DAZEL_INSTANCE_NAME", DEFAULT_INSTANCE_NAME),
                 image_name=config.get("DAZEL_IMAGE_NAME", DEFAULT_IMAGE_NAME),
                 run_command=config.get("DAZEL_RUN_COMMAND", DEFAULT_RUN_COMMAND),
+                docker_command=config.get("DAZEL_DOCKER_COMMAND", DEFAULT_DOCKER_COMMAND),
                 dockerfile=config.get("DAZEL_DOCKERFILE", DEFAULT_LOCAL_DOCKERFILE),
                 repository=config.get("DAZEL_REPOSITORY", DEFAULT_REMOTE_REPOSITORY),
                 directory=config.get("DAZEL_DIRECTORY", DEFAULT_DIRECTORY),
@@ -124,7 +127,8 @@ class DockerInstance:
                                           DEFAULT_WORKSPACE_HEX))
 
     def send_command(self, args):
-        command = "docker exec -i %s %s %s %s %s %s %s" % (
+        command = "%s exec -i %s %s %s %s %s %s %s" % (
+            self.docker_command,
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
             self.instance_name,
@@ -186,7 +190,8 @@ class DockerInstance:
 
     def is_running(self):
         """Checks if the container is currently running."""
-        command = "docker ps | grep \"\\<%s\\>\" >/dev/null 2>&1" % (self.instance_name)
+        command = "%s ps | grep \"\\<%s\\>\" >/dev/null 2>&1" % (
+            self.docker_command, self.instance_name)
         command = self._with_docker_machine(command)
 
         # If we have a directory, make sure the running container is mapped to
@@ -213,8 +218,8 @@ class DockerInstance:
 
     def _image_exists(self):
         """Checks if the dazel image exists in the local repository."""
-        command = "docker images | grep \"\\<%s/%s\\>\" >/dev/null 2>&1" % (
-            self.repository, self.image_name)
+        command = "%s images | grep \"\\<%s/%s\\>\" >/dev/null 2>&1" % (
+            self.docker_command, self.repository, self.image_name)
         command = self._with_docker_machine(command)
         rc = self._run_silent_command(command)
         return (rc == 0)
@@ -224,8 +229,8 @@ class DockerInstance:
         if not os.path.exists(self.dockerfile):
             raise RuntimeError("No Dockerfile to build the dazel image from.")
 
-        command = "docker build -t %s/%s -f %s %s" % (
-            self.repository, self.image_name, self.dockerfile, self.directory)
+        command = "%s build -t %s/%s -f %s %s" % (
+            self.docker_command, self.repository, self.image_name, self.dockerfile, self.directory)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
 
@@ -234,14 +239,14 @@ class DockerInstance:
         if not self.repository:
             raise RuntimeError("No repository to pull the dazel image from.")
 
-        command = "docker pull %s/%s" % (self.repository, self.image_name)
+        command = "%s pull %s/%s" % (self.docker_command, self.repository, self.image_name)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
 
     def _network_exists(self):
         """Checks if the network we need to use exists."""
-        command = "docker network ls | grep \"\\<%s\\>\" >/dev/null 2>&1" % (
-            self.network)
+        command = "%s network ls | grep \"\\<%s\\>\" >/dev/null 2>&1" % (
+            self.docker_command, self.network)
         command = self._with_docker_machine(command)
         rc = self._run_silent_command(command)
         return (rc == 0)
@@ -251,7 +256,7 @@ class DockerInstance:
         if not self.network:
             return 0
 
-        command = "docker network create %s" % self.network
+        command = "%s network create %s" % (self.docker_command, self.network)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
 
@@ -303,9 +308,10 @@ class DockerInstance:
     def _run_container(self):
         """Runs the container itself."""
         logger.info("Starting docker container '%s'..." % self.instance_name)
-        command = "docker stop %s >/dev/null 2>&1 ; " % (self.instance_name)
-        command += "docker rm %s >/dev/null 2>&1 ; " % (self.instance_name)
-        command += "docker run -id --name=%s %s %s %s %s %s %s%s %s" % (
+        command = "%s stop %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
+        command += "%s rm %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
+        command += "%s run -id --name=%s %s %s %s %s %s %s%s %s" % (
+            self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
             ("-w %s" % os.path.realpath(self.directory)) if self.directory else "",
@@ -443,7 +449,7 @@ class DockerInstance:
 
     def _docker_exists(self):
         """Checks if the basic docker executable exists."""
-        return self._command_exists("docker")
+        return self._command_exists(self.docker_command)
 
     def _docker_compose_exists(self):
         """Checks if the docker-compose executable exists."""

@@ -45,7 +45,7 @@ Dependencies
 .. code:: bash
 
     apt-get install python python-pip
-    apt-get install docker
+    apt-get install docker-ce
 
 Install dazel
 ~~~~~~~~~~~~~
@@ -79,6 +79,9 @@ The possible parameters to set are (with their defaults):
     # The command to run when running the image (the continuous command that will
     # hold the container active while we connect to it).
     DAZEL_RUN_COMMAND="/bin/bash"
+
+    # The command to run to invoke docker (can be changed to `nvidia-docker` for GPUs).
+    DAZEL_DOCKER_COMMAND="docker"
 
     # The path to the Dockerfile to use to build the dazel image.
     DAZEL_DOCKERFILE="Dockerfile.dazel"  # in DAZEL_DIRECTORY
