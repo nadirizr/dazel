@@ -25,6 +25,7 @@ DEFAULT_PORTS = []
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
 DEFAULT_DOCKER_COMPOSE_FILE = ""
+DEFAULT_DOCKER_COMPOSE_COMMAND = "docker-compose"
 DEFAULT_DOCKER_COMPOSE_PROJECT_NAME = "dazel"
 DEFAULT_DOCKER_COMPOSE_SERVICES = ""
 
@@ -53,9 +54,10 @@ class DockerInstance:
 
     def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
                        repository, directory, command, volumes, ports, network,
-                       run_deps, docker_compose_file, docker_compose_project_name,
-                       docker_compose_services, bazel_user_output_root, bazel_rc_file,
-                       docker_run_privileged, docker_machine, dazel_run_file, workspace_hex):
+                       run_deps, docker_compose_file, docker_compose_command,
+                       docker_compose_project_name, docker_compose_services, bazel_user_output_root,
+                       bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
+                       workspace_hex):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -68,6 +70,7 @@ class DockerInstance:
         self.command = command
         self.network = network
         self.docker_compose_file = docker_compose_file
+        self.docker_compose_command = docker_compose_command
         self.docker_compose_project_name = docker_compose_project_name
         self.bazel_user_output_root = bazel_user_output_root
         self.bazel_output_base = ""
@@ -111,6 +114,8 @@ class DockerInstance:
                 run_deps=config.get("DAZEL_RUN_DEPS", DEFAULT_RUN_DEPS),
                 docker_compose_file=config.get("DAZEL_DOCKER_COMPOSE_FILE",
                                                DEFAULT_DOCKER_COMPOSE_FILE),
+                docker_compose_command=config.get("DAZEL_DOCKER_COMPOSE_COMMAND",
+                                                  DEFAULT_DOCKER_COMPOSE_COMMAND),
                 docker_compose_project_name=config.get("DAZEL_DOCKER_COMPOSE_PROJECT_NAME",
                                                        DEFAULT_DOCKER_COMPOSE_PROJECT_NAME),
                 docker_compose_services=config.get("DAZEL_DOCKER_COMPOSE_SERVICES",
@@ -267,6 +272,7 @@ class DockerInstance:
                 instance_name=run_dep_name,
                 image_name=run_dep_image,
                 run_command=None,
+                docker_command=None,
                 dockerfile=None,
                 repository=None,
                 directory=None,
@@ -276,6 +282,7 @@ class DockerInstance:
                 network=self.network,
                 run_deps=None,
                 docker_compose_file=None,
+                docker_compose_command=None,
                 docker_compose_project_name=None,
                 docker_compose_services=None,
                 bazel_rc_file=None,
@@ -293,14 +300,14 @@ class DockerInstance:
         if not self.docker_compose_file:
             return 0
 
-        command = "COMPOSE_PROJECT_NAME=%s docker-compose -f %s pull --ignore-pull-failures %s" % (
-            self.docker_compose_project_name, self.docker_compose_file,
+        command = "COMPOSE_PROJECT_NAME=%s %s -f %s pull --ignore-pull-failures %s" % (
+            self.docker_compose_project_name, self.docker_compose_command, self.docker_compose_file,
             self.docker_compose_services)
-        command += " && COMPOSE_PROJECT_NAME=%s docker-compose -f %s build %s" % (
-            self.docker_compose_project_name, self.docker_compose_file,
+        command += " && COMPOSE_PROJECT_NAME=%s %s -f %s build %s" % (
+            self.docker_compose_project_name, self.docker_compose_command, self.docker_compose_file,
             self.docker_compose_services)
-        command += " && COMPOSE_PROJECT_NAME=%s docker-compose -f %s up --force-recreate -d %s" % (
-            self.docker_compose_project_name, self.docker_compose_file,
+        command += " && COMPOSE_PROJECT_NAME=%s %s -f %s up --force-recreate -d %s" % (
+            self.docker_compose_project_name, self.docker_compose_command, self.docker_compose_file,
             self.docker_compose_services)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
@@ -453,7 +460,7 @@ class DockerInstance:
 
     def _docker_compose_exists(self):
         """Checks if the docker-compose executable exists."""
-        return self._command_exists("docker-compose")
+        return self._command_exists(self.docker_compose_command)
 
     def _command_exists(self, cmd):
         """Checks if a command exists on the system."""

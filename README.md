@@ -110,6 +110,10 @@ DAZEL_RUN_DEPS=[]
 # variables below.
 DAZEL_DOCKER_COMPOSE_FILE=""
 
+# The command to run to invoke docker-compose (can be changed to
+# `nvidia-docker-compose` for GPUs).
+DAZEL_DOCKER_COMPOSE_COMMAND="docker-compose"
+
 # If using a docker-compose.yml file, this will set the COMPOSE_PROJECT_NAME
 # environment variable and thus the project name.
 DAZEL_DOCKER_COMPOSE_PROJECT_NAME="dazel"
