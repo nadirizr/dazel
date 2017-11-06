@@ -74,7 +74,7 @@ DAZEL_DIRECTORY=$PWD
 # The command to run inside the container.
 # NOTE: You should add flags to the .bazelrc file instead of here, since it is
 #       also shared in the volume and it is a much cleaner way.
-DAZEL_COMMAND="/bazel/output/bazel"
+DAZEL_COMMAND="/usr/bin/bazel"
 
 # Add any additional volumes you want to share between the host and the docker
 # container, in the normal "hostdir:dockerdir" format.
