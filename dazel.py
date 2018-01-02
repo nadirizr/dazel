@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import types
@@ -132,8 +133,10 @@ class DockerInstance:
                                           DEFAULT_WORKSPACE_HEX))
 
     def send_command(self, args):
-        command = "%s exec -i %s %s %s %s %s %s %s" % (
+        command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s" % (
             self.docker_command,
+            *shutil.get_terminal_size(),
+            os.environ.get("TERM", ""),
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
             self.instance_name,
