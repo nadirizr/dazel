@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
-import types
+import collections
 
 
 DAZEL_RC_FILE = ".dazelrc"
@@ -23,6 +23,7 @@ DEFAULT_DIRECTORY = os.getcwd()
 DEFAULT_COMMAND = "/usr/bin/bazel"
 DEFAULT_VOLUMES = []
 DEFAULT_PORTS = []
+DEFAULT_ENVS = []
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
 DEFAULT_DOCKER_COMPOSE_FILE = ""
@@ -54,7 +55,7 @@ class DockerInstance:
     """
 
     def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
-                       repository, directory, command, volumes, ports, network,
+                       repository, directory, command, volumes, ports, envs, network,
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
@@ -94,6 +95,7 @@ class DockerInstance:
 
         self._add_volumes(volumes)
         self._add_ports(ports)
+        self._add_envs(envs)
         self._add_run_deps(run_deps)
         self._add_compose_services(docker_compose_services)
 
@@ -112,6 +114,7 @@ class DockerInstance:
                 command=config.get("DAZEL_COMMAND", DEFAULT_COMMAND),
                 volumes=config.get("DAZEL_VOLUMES", DEFAULT_VOLUMES),
                 ports=config.get("DAZEL_PORTS", DEFAULT_PORTS),
+                envs=config.get("DAZEL_ENVS", DEFAULT_ENVS),
                 network=config.get("DAZEL_NETWORK", DEFAULT_NETWORK),
                 run_deps=config.get("DAZEL_RUN_DEPS", DEFAULT_RUN_DEPS),
                 docker_compose_file=config.get("DAZEL_DOCKER_COMPOSE_FILE",
@@ -136,9 +139,10 @@ class DockerInstance:
         )
 
     def send_command(self, args):
+        term = shutil.get_terminal_size()
         command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s" % (
             self.docker_command,
-            *shutil.get_terminal_size(),
+            term.columns, term.lines,
             os.environ.get("TERM", ""),
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
@@ -323,13 +327,14 @@ class DockerInstance:
         logger.info("Starting docker container '%s'..." % self.instance_name)
         command = "%s stop %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
         command += "%s rm %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
-        command += "%s run -id --name=%s %s %s %s %s %s %s%s %s" % (
+        command += "%s run -id --name=%s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
             ("-w %s" % os.path.realpath(self.directory)) if self.directory else "",
             self.volumes,
             self.ports,
+            self.envs,
             ("--net=%s" % self.network) if self.network else "",
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
@@ -356,9 +361,11 @@ class DockerInstance:
         # DAZEL_VOLUMES can be a python iterable or a comma-separated string.
         if isinstance(volumes, str):
             volumes = [v.strip() for v in volumes.split(",")]
-        elif volumes and not isinstance(volumes, types.Iterable):
+        elif volumes and not isinstance(volumes, collections.Iterable):
             raise RuntimeError("DAZEL_VOLUMES must be comma-separated string "
                                "or python iterable of strings")
+
+        volumes = [os.path.expanduser(v) for v in volumes]
 
         # Find the real source and output directories.
         real_directory = os.path.realpath(self.directory)
@@ -416,12 +423,29 @@ class DockerInstance:
         # DAZEL_PORTS can be a python iterable or a comma-separated string.
         if isinstance(ports, str):
             ports = [p.strip() for p in ports.split(",")]
-        elif ports and not isinstance(ports, types.Iterable):
+        elif ports and not isinstance(ports, collections.Iterable):
             raise RuntimeError("DAZEL_PORTS must be comma-separated string "
                                "or python iterable of strings")
 
         # Find the real source and output directories.
         self.ports = '-p "%s"' % '" -p "'.join(ports)
+
+    def _add_envs(self, envs):
+        """Add the given environment variables to the run string."""
+        # This can only be intentional in code, so ignore None volumes.
+        self.envs = ""
+        if not envs:
+            return
+
+        # DAZEL_ENVS can be a python iterable or a comma-separated string.
+        if isinstance(envs, str):
+            envs = [e.strip() for e in envs.split(",")]
+        elif envs and not isinstance(envs, collections.Iterable):
+            raise RuntimeError("DAZEL_ENVS must be comma-separated string "
+                               "or python iterable of strings")
+
+        # Create the environment variables string.
+        self.envs = '-e "%s"' % '" -e "'.join(envs)
 
     def _add_run_deps(self, run_deps):
         """Adds the necessary runtime container dependencies to launch."""
@@ -433,7 +457,7 @@ class DockerInstance:
         # DAZEL_RUN_DEPS can be a python iterable or a comma-separated string.
         if isinstance(run_deps, str):
             run_deps = [rd.strip() for rd in run_deps.split(",")]
-        elif run_deps and not isinstance(run_deps, types.Iterable):
+        elif run_deps and not isinstance(run_deps, collections.Iterable):
             raise RuntimeError("DAZEL_RUN_DEPS must be comma-separated string "
                                "or python iterable of strings")
 
@@ -454,7 +478,7 @@ class DockerInstance:
         # comma-separated string.
         if isinstance(docker_compose_services, str):
             docker_compose_services = [s.strip() for s in docker_compose_services.split(",")]
-        elif docker_compose_services and not isinstance(docker_compose_services, types.Iterable):
+        elif docker_compose_services and not isinstance(docker_compose_services, collections.Iterable):
             raise RuntimeError("DAZEL_DOCKER_COMPOSE_SERVICES must be comma-separated string "
                                "or python iterable of strings")
 

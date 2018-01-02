@@ -87,6 +87,10 @@ DAZEL_VOLUMES=[]
 # command for example, and need to publish port 80.
 DAZEL_PORTS=[]
 
+# Add any envs you want to the docker image to recieve, for example "deep=purple"
+# or "today".
+DAZEL_ENVS=[]
+
 # The name of the network on which to load all run dependencies and dazel container.
 # If you are using a docker-compose.yml file to load the environment, this must
 # be the network name to which all of the necessary dependencies are connected.
