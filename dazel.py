@@ -162,18 +162,6 @@ class DockerInstance:
             logger.error("ERROR: Docker executable could not be found!")
             return 1
 
-        # Build or pull the relevant dazel image.
-        if os.path.exists(self.dockerfile):
-            rc = self._build()
-        else:
-            rc = self._pull()
-            # If we have the image, don't stop everything just because we
-            # couldn't pull.
-            if rc and self._image_exists():
-                rc = 0
-        if rc:
-            return rc
-
         # If given a docker-compose file, start the services needed to run.
         if self.docker_compose_file and self._docker_compose_exists():
             rc = self._start_compose_services()
@@ -190,6 +178,18 @@ class DockerInstance:
 
             # Setup run dependencies if necessary.
             rc = self._start_run_deps()
+        if rc:
+            return rc
+
+        # Build or pull the relevant dazel image.
+        if os.path.exists(self.dockerfile):
+            rc = self._build()
+        else:
+            rc = self._pull()
+            # If we have the image, don't stop everything just because we
+            # couldn't pull.
+            if rc and self._image_exists():
+                rc = 0
         if rc:
             return rc
 
