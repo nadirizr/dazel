@@ -30,9 +30,9 @@ DEFAULT_DOCKER_COMPOSE_COMMAND = "docker-compose"
 DEFAULT_DOCKER_COMPOSE_PROJECT_NAME = "dazel"
 DEFAULT_DOCKER_COMPOSE_SERVICES = ""
 
-DEFAULT_BAZEL_USER_OUTPUT_ROOT = ("%s/.cache/bazel/_bazel_%s" %
-                                  (os.environ.get("HOME", "~"),
-                                   os.environ.get("USER", "user")))
+DEFAULT_DELEGATED_VOLUME = True
+DEFAULT_BAZEL_USER_OUTPUT_ROOT = os.path.expanduser("~/.cache/bazel/_bazel_%s" %
+                                                    os.environ.get("USER", "user"))
 TEMP_BAZEL_OUTPUT_USER_ROOT = ("/var/bazel/workspace/_bazel_%s" %
                                os.environ.get("USER", "user"))
 DEFAULT_BAZEL_USER_OUTPUT_PATHS = ["external", "action_cache", "execroot"]
@@ -58,7 +58,7 @@ class DockerInstance:
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
-                       workspace_hex):
+                       workspace_hex, delegated_volume):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -79,6 +79,7 @@ class DockerInstance:
         self.docker_run_privileged = docker_run_privileged
         self.docker_machine = docker_machine
         self.dazel_run_file = dazel_run_file
+        self.delegated_volume_flag = ":delegated" if delegated_volume else ""
 
         if workspace_hex:
             self.workspace_hex_digest = hashlib.md5(real_directory.encode("ascii")).hexdigest()
@@ -130,7 +131,9 @@ class DockerInstance:
                                           DEFAULT_DOCKER_MACHINE),
                 dazel_run_file=config.get("DAZEL_RUN_FILE", DAZEL_RUN_FILE),
                 workspace_hex=config.get("DAZEL_WORKSPACE_HEX",
-                                          DEFAULT_WORKSPACE_HEX))
+                                          DEFAULT_WORKSPACE_HEX),
+                delegated_volume=config.get("DAZEL_DELEGATED_VOLUME", "DEFAULT_DELEGATED_VOLUME"),
+        )
 
     def send_command(self, args):
         command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s" % (
@@ -389,10 +392,11 @@ class DockerInstance:
                                user_output_path))
               if not os.path.isdir(real_user_output_path):
                   os.makedirs(real_user_output_path)
-              volumes += ["%s:%s" % (real_user_output_path,
-                                     real_user_output_path)]
+              volumes += ["%s:%s%s" % (real_user_output_path,
+                                       real_user_output_path,
+                                       self.delegated_volume_flag)]
         elif real_bazelout:
-            volumes += ["%s:%s" % (real_bazelout, real_bazelout)]
+            volumes += ["%s:%s%s" % (real_bazelout, real_bazelout, self.delegated_volume_flag)]
             self.bazel_output_base = real_bazelout
 
         # Make sure the path exists on the host.

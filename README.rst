@@ -151,3 +151,9 @@ The possible parameters to set are (with their defaults):
 
     # Path to custom .bazelrc file to use when running the bazel commands.
     DAZEL_BAZEL_RC_FILE=""
+
+    # Use the :delegated flag of the --volume option of docker for the bind-mounting of
+    # the bazel cache directory. This vastly improves throughput on MacOSX.
+    # More information on the :delegated flag: https://docs.docker.com/docker-for-mac/osxfs-caching/.
+    # NOTE: This will fail on Docker versions < 17.04.
+    DAZEL_DELEGATED_VOLUME=True
