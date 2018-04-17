@@ -240,8 +240,9 @@ class DockerInstance:
         if not os.path.exists(self.dockerfile):
             raise RuntimeError("No Dockerfile to build the dazel image from.")
 
+        dockerfile_directory = os.path.dirname(os.path.realpath(self.dockerfile))
         command = "%s build -t %s/%s -f %s %s" % (
-            self.docker_command, self.repository, self.image_name, self.dockerfile, self.directory)
+            self.docker_command, self.repository, self.image_name, self.dockerfile, dockerfile_directory)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
 
