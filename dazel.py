@@ -1,12 +1,10 @@
-#!/usr/bin/env python3
-
 import hashlib
 import logging
 import os
 import shutil
 import subprocess
 import sys
-import types
+import collections
 
 
 DAZEL_RC_FILE = ".dazelrc"
@@ -136,9 +134,10 @@ class DockerInstance:
         )
 
     def send_command(self, args):
+        term_size = shutil.get_terminal_size()
         command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s" % (
             self.docker_command,
-            *shutil.get_terminal_size(),
+            term_size.columns, term_size.lines,
             os.environ.get("TERM", ""),
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
@@ -356,7 +355,7 @@ class DockerInstance:
         # DAZEL_VOLUMES can be a python iterable or a comma-separated string.
         if isinstance(volumes, str):
             volumes = [v.strip() for v in volumes.split(",")]
-        elif volumes and not isinstance(volumes, types.Iterable):
+        elif volumes and not isinstance(volumes, collections.Iterable):
             raise RuntimeError("DAZEL_VOLUMES must be comma-separated string "
                                "or python iterable of strings")
 
@@ -416,7 +415,7 @@ class DockerInstance:
         # DAZEL_PORTS can be a python iterable or a comma-separated string.
         if isinstance(ports, str):
             ports = [p.strip() for p in ports.split(",")]
-        elif ports and not isinstance(ports, types.Iterable):
+        elif ports and not isinstance(ports, collections.Iterable):
             raise RuntimeError("DAZEL_PORTS must be comma-separated string "
                                "or python iterable of strings")
 
@@ -433,7 +432,7 @@ class DockerInstance:
         # DAZEL_RUN_DEPS can be a python iterable or a comma-separated string.
         if isinstance(run_deps, str):
             run_deps = [rd.strip() for rd in run_deps.split(",")]
-        elif run_deps and not isinstance(run_deps, types.Iterable):
+        elif run_deps and not isinstance(run_deps, collections.Iterable):
             raise RuntimeError("DAZEL_RUN_DEPS must be comma-separated string "
                                "or python iterable of strings")
 
@@ -454,7 +453,7 @@ class DockerInstance:
         # comma-separated string.
         if isinstance(docker_compose_services, str):
             docker_compose_services = [s.strip() for s in docker_compose_services.split(",")]
-        elif docker_compose_services and not isinstance(docker_compose_services, types.Iterable):
+        elif docker_compose_services and not isinstance(docker_compose_services, collections.Iterable):
             raise RuntimeError("DAZEL_DOCKER_COMPOSE_SERVICES must be comma-separated string "
                                "or python iterable of strings")
 
