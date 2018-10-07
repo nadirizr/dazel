@@ -1,7 +1,7 @@
 FROM debian:9.5-slim
 MAINTAINER Nadir Izrael nadir.izr@gmail.com
 
-ENV BAZEL_VERSION 0.16.0
+ENV BAZEL_VERSION 0.17.2
 
 # Creating the man pages directory to deal with the slim variants not having it.
 RUN mkdir -p /usr/share/man/man1 \
