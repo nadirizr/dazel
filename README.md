@@ -41,11 +41,12 @@ Even bazel is not required!
 
 ## Configuration
 
-You can configure dazel in two ways (or combine):
-* A .dazelrc file in the current directory.
+You can configure dazel in three ways (listed in order of lowest precedence to highest):
+* A `.dazelrc` file in the current directory.
+* A `.dazelrc.local` file in the current directory (this is for local user overrides - _should be .gitignored if used_).
 * Environment variables with the configuration parameters mentioned below.
 
-Note that specific environment variables supercede the values in the .dazelrc file.
+You may combine these methods, but note that parameter values will supercede each other in the order listed above (i.e: specific parameters specified by environment variables will supercede values in both the `.dazelrc` and the `.dazelrc.local`).  Parameters whose values are lists such as `DAZEL_VOLUMES` will override each other as opposed to being merged.
 
 The possible parameters to set are (with their defaults):
 ```python

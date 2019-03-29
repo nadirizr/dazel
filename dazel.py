@@ -8,6 +8,7 @@ import collections
 
 
 DAZEL_RC_FILE = ".dazelrc"
+DAZEL_RC_LOCAL_FILE = ".dazelrc.local"
 DAZEL_RUN_FILE = ".dazel_run"
 BAZEL_WORKSPACE_FILE = "WORKSPACE"
 
@@ -100,6 +101,7 @@ class DockerInstance:
     @classmethod
     def from_config(cls):
         config = cls._config_from_file()
+        config.update(cls._config_from_file(filename=DAZEL_RC_LOCAL_FILE, env_var="DAZEL_RC_LOCAL_FILE"))
         config.update(cls._config_from_environment())
         return DockerInstance(
                 instance_name=config.get("DAZEL_INSTANCE_NAME", DEFAULT_INSTANCE_NAME),
@@ -487,19 +489,20 @@ class DockerInstance:
         return "eval $(docker-machine env %s) && (%s)" % (self.docker_machine, cmd)
 
     @classmethod
-    def _config_from_file(cls):
+    def _config_from_file(cls, filename=DAZEL_RC_FILE, env_var="DAZEL_RC_FILE"):
         """Creates a configuration from a .dazelrc file."""
         directory = cls._find_workspace_directory()
-        local_dazelrc_path = os.path.join(directory, DAZEL_RC_FILE)
-        dazelrc_path = os.environ.get("DAZEL_RC_FILE", local_dazelrc_path)
+        # Build the expanded path for the config file
+        local_dazelrc_path = os.path.join(directory, filename)
+        # If a custom config path was defined by the env_var, use that path
+        config_path = os.environ.get(env_var, local_dazelrc_path)
 
-        if not os.path.exists(dazelrc_path):
-            return { "DAZEL_DIRECTORY": os.environ.get("DAZEL_DIRECTORY", directory) }
-
-        config = {}
-        with open(dazelrc_path, "r") as dazelrc:
-            exec(dazelrc.read(), config)
-        config["DAZEL_DIRECTORY"] = os.environ.get("DAZEL_DIRECTORY", directory)
+        # Use the workspace directory by default.  Lower precendence than DAZEL_DIRECTORY env var.
+        config = { "DAZEL_DIRECTORY": directory }
+        if os.path.exists(config_path):
+            with open(config_path, "r") as dazelrc:
+                # This will merge/overwrite any existing values
+                exec(dazelrc.read(), config)
         return config
 
     @classmethod
