@@ -100,7 +100,7 @@ class DockerInstance:
 
     @classmethod
     def from_config(cls):
-        config = cls._config_from_file()
+        config = cls._config_from_file(filename=DAZEL_RC_FILE, env_var="DAZEL_RC_FILE")
         config.update(cls._config_from_file(filename=DAZEL_RC_LOCAL_FILE, env_var="DAZEL_RC_LOCAL_FILE"))
         config.update(cls._config_from_environment())
         return DockerInstance(
@@ -489,7 +489,7 @@ class DockerInstance:
         return "eval $(docker-machine env %s) && (%s)" % (self.docker_machine, cmd)
 
     @classmethod
-    def _config_from_file(cls, filename=DAZEL_RC_FILE, env_var="DAZEL_RC_FILE"):
+    def _config_from_file(cls, filename, env_var):
         """Creates a configuration from a .dazelrc file."""
         directory = cls._find_workspace_directory()
         # Build the expanded path for the config file
