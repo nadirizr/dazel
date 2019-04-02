@@ -41,8 +41,9 @@ Even bazel is not required!
 
 ## Configuration
 
-You can configure dazel in three ways (listed in order of lowest precedence to highest):
+You can configure dazel in three ways (listed in order of ascending precedence):
 * A `.dazelrc` file in the current directory.
+* A `~/.dazelrc` file in the user's `$HOME` directory.
 * A `.dazelrc.local` file in the current directory (this is for local user overrides - _should be .gitignored if used_).
 * Environment variables with the configuration parameters mentioned below.
 
