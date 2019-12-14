@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 import collections
@@ -28,6 +29,7 @@ DEFAULT_DOCKER_COMPOSE_COMMAND = "docker-compose"
 DEFAULT_DOCKER_COMPOSE_PROJECT_NAME = "dazel"
 DEFAULT_DOCKER_COMPOSE_SERVICES = ""
 DEFAULT_USER = ""
+DEFAULT_GROUPS = []
 
 DEFAULT_DELEGATED_VOLUME = True
 DEFAULT_BAZEL_USER_OUTPUT_ROOT = os.path.expanduser("~/.cache/bazel/_bazel_%s" %
@@ -57,7 +59,8 @@ class DockerInstance:
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
-                       workspace_hex, delegated_volume, user):
+                       workspace_hex, delegated_volume, user, groups,
+                       ssh_auth_sock,):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -80,6 +83,7 @@ class DockerInstance:
         self.dazel_run_file = dazel_run_file
         self.delegated_volume_flag = ":delegated" if delegated_volume else ""
         self.user = user
+        self.ssh_auth_sock = ssh_auth_sock
 
         if workspace_hex:
             self.workspace_hex_digest = hashlib.md5(real_directory.encode("ascii")).hexdigest()
@@ -94,6 +98,7 @@ class DockerInstance:
 
         self._add_volumes(volumes)
         self._add_ports(ports)
+        self._add_groups(groups)
         self._add_run_deps(run_deps)
         self._add_compose_services(docker_compose_services)
 
@@ -133,15 +138,21 @@ class DockerInstance:
                 workspace_hex=config.get("DAZEL_WORKSPACE_HEX",
                                           DEFAULT_WORKSPACE_HEX),
                 delegated_volume=config.get("DAZEL_DELEGATED_VOLUME", "DEFAULT_DELEGATED_VOLUME"),
-                user = config.get("DAZEL_USER", DEFAULT_USER),
+                user=config.get("DAZEL_USER", DEFAULT_USER),
+                groups=config.get("DAZEL_GROUPS", DEFAULT_GROUPS),
+                ssh_auth_sock=os.environ.get('SSH_AUTH_SOCK', None),
         )
 
     def send_command(self, args):
         term_size = shutil.get_terminal_size()
-        command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s %s" % (
+        sock = ''
+        if self.ssh_auth_sock is not None:
+            sock = '-e SSH_AUTH_SOCK=%s' % shlex.quote(self.ssh_auth_sock)
+        command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s %s %s" % (
             self.docker_command,
             term_size.columns, term_size.lines,
             os.environ.get("TERM", ""),
+            sock,
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
             ("--user=%s" % self.user
@@ -327,7 +338,7 @@ class DockerInstance:
         logger.info("Starting docker container '%s'..." % self.instance_name)
         command = "%s stop %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
         command += "%s rm %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
-        command += "%s run -id --name=%s %s %s %s %s %s %s %s%s %s" % (
+        command += "%s run -id --name=%s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
@@ -336,11 +347,13 @@ class DockerInstance:
             ("-w %s" % os.path.realpath(self.directory)) if self.directory else "",
             self.volumes,
             self.ports,
+            self.groups,
             ("--net=%s" % self.network) if self.network else "",
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
             self.run_command if self.run_command else "")
         command = self._with_docker_machine(command)
+
         rc = self._run_silent_command(command)
         if rc:
             return rc
@@ -409,6 +422,9 @@ class DockerInstance:
         if self.bazel_user_output_root and not os.path.isdir(self.bazel_user_output_root):
             os.makedirs(self.bazel_user_output_root)
 
+        if self.ssh_auth_sock is not None:
+            volumes.append("%(sock)s:%(sock)s" % {'sock': self.ssh_auth_sock})
+
         # Calculate the volumes string.
         self.volumes = '-v "%s"' % '" -v "'.join(volumes)
 
@@ -428,6 +444,22 @@ class DockerInstance:
 
         # Find the real source and output directories.
         self.ports = '-p "%s"' % '" -p "'.join(ports)
+
+    def _add_groups(self, groups):
+        """Add the given groups to the run string."""
+        # This can only be intentional in code, so ignore None volumes.
+        self.groups = ""
+        if not groups:
+            return
+
+        # DAZEL_GROUPS can be a python iterable or a comma-separated string.
+        if isinstance(groups, str):
+            groups = [g.strip() for g in groups.split(",")]
+        elif groups and not isinstance(groups, collections.Iterable):
+            raise RuntimeError("DAZEL_GROUPS must be comma-separated string "
+                               "or python iterable of strings")
+
+        self.groups = '--group-add "%s"' % '" --group-add "'.join(groups)
 
     def _add_run_deps(self, run_deps):
         """Adds the necessary runtime container dependencies to launch."""
