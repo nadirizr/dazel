@@ -7,7 +7,13 @@ import sys
 import collections
 
 
-DAZEL_RC_FILE = ".dazelrc"
+# Dazel RC files and their respective environment variable path overrides (in order of ascending precedence)
+DAZEL_RC_FILE_ENVS = [
+    ("DAZEL_RC_FILE", ".dazelrc"),
+    ("DAZEL_RC_USER_FILE", "~/.dazelrc"),
+    ("DAZEL_RC_LOCAL_FILE", ".dazelrc.local")
+]
+
 DAZEL_RUN_FILE = ".dazel_run"
 BAZEL_WORKSPACE_FILE = "WORKSPACE"
 
@@ -99,7 +105,9 @@ class DockerInstance:
 
     @classmethod
     def from_config(cls):
-        config = cls._config_from_file()
+        config = {}
+        for (env_var, default_path) in DAZEL_RC_FILE_ENVS:
+            config.update(cls._config_from_file(filename=default_path, env_var=env_var))
         config.update(cls._config_from_environment())
         return DockerInstance(
                 instance_name=config.get("DAZEL_INSTANCE_NAME", DEFAULT_INSTANCE_NAME),
@@ -487,19 +495,25 @@ class DockerInstance:
         return "eval $(docker-machine env %s) && (%s)" % (self.docker_machine, cmd)
 
     @classmethod
-    def _config_from_file(cls):
+    def _config_from_file(cls, filename, env_var):
         """Creates a configuration from a .dazelrc file."""
-        directory = cls._find_workspace_directory()
-        local_dazelrc_path = os.path.join(directory, DAZEL_RC_FILE)
-        dazelrc_path = os.environ.get("DAZEL_RC_FILE", local_dazelrc_path)
+        dazel_dir = cls._find_workspace_directory()
+        # Build the expanded path for the config file and join it to the dazel_dir if
+        # necessary
+        expanded_path = os.path.expanduser(filename)
+        if expanded_path.startswith('/'):
+            dazelrc_path = expanded_path
+        else:
+            dazelrc_path = os.path.join(dazel_dir, filename)
+        # If a custom config path was defined by the env_var, use that path
+        config_path = os.environ.get(env_var, dazelrc_path)
 
-        if not os.path.exists(dazelrc_path):
-            return { "DAZEL_DIRECTORY": os.environ.get("DAZEL_DIRECTORY", directory) }
-
-        config = {}
-        with open(dazelrc_path, "r") as dazelrc:
-            exec(dazelrc.read(), config)
-        config["DAZEL_DIRECTORY"] = os.environ.get("DAZEL_DIRECTORY", directory)
+        # Use the workspace directory by default.  Lower precendence than DAZEL_DIRECTORY env var.
+        config = { "DAZEL_DIRECTORY": dazel_dir }
+        if os.path.exists(config_path):
+            with open(config_path, "r") as dazelrc:
+                # This will merge/overwrite any existing values
+                exec(dazelrc.read(), config)
         return config
 
     @classmethod
