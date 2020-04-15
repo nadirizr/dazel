@@ -418,7 +418,7 @@ class DockerInstance:
 
     def _add_ports(self, ports):
         """Add the given ports to the run string."""
-        # This can only be intentional in code, so ignore None volumes.
+        # This can only be intentional in code, so disregard.
         self.ports = ""
         if not ports:
             return
@@ -430,12 +430,12 @@ class DockerInstance:
             raise RuntimeError("DAZEL_PORTS must be comma-separated string "
                                "or python iterable of strings")
 
-        # Find the real source and output directories.
+        # calculate the ports string
         self.ports = '-p "%s"' % '" -p "'.join(ports)
 
     def _add_env_vars(self, env_vars):
         """Add the given env vars to the run string."""
-        # This can only be intentional in code, so ignore None volumes.
+        # This can only be intentional in code, so disregard.
         self.env_vars = ""
         if not env_vars:
             return
@@ -447,7 +447,7 @@ class DockerInstance:
             raise RuntimeError("DAZEL_ENV_VARS must be comma-separated string "
                                "or python iterable of strings")
 
-        # Find the real source and output directories.
+        # calculate the env string
         self.env_vars = '-e "%s"' % '" -e "'.join(env_vars)
 
     def _add_run_deps(self, run_deps):
