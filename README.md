@@ -87,6 +87,11 @@ DAZEL_VOLUMES=[]
 # command for example, and need to publish port 80.
 DAZEL_PORTS=[]
 
+# Add any environment variables you want to set in the dazel container
+# They will be set via -e in the docker run command
+# This can be a python iterable, or a comma-separated string.
+DAZEL_ENV_VARS=[]
+
 # The name of the network on which to load all run dependencies and dazel container.
 # If you are using a docker-compose.yml file to load the environment, this must
 # be the network name to which all of the necessary dependencies are connected.

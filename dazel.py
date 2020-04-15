@@ -21,6 +21,7 @@ DEFAULT_DIRECTORY = os.getcwd()
 DEFAULT_COMMAND = "/usr/bin/bazel"
 DEFAULT_VOLUMES = []
 DEFAULT_PORTS = []
+DEFAULT_ENV_VARS = []
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
 DEFAULT_DOCKER_COMPOSE_FILE = ""
@@ -53,7 +54,7 @@ class DockerInstance:
     """
 
     def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
-                       repository, directory, command, volumes, ports, network,
+                       repository, directory, command, volumes, ports, env_vars, network,
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
@@ -94,6 +95,7 @@ class DockerInstance:
 
         self._add_volumes(volumes)
         self._add_ports(ports)
+        self._add_env_vars(env_vars)
         self._add_run_deps(run_deps)
         self._add_compose_services(docker_compose_services)
 
@@ -112,6 +114,7 @@ class DockerInstance:
                 command=config.get("DAZEL_COMMAND", DEFAULT_COMMAND),
                 volumes=config.get("DAZEL_VOLUMES", DEFAULT_VOLUMES),
                 ports=config.get("DAZEL_PORTS", DEFAULT_PORTS),
+                env_vars=config.get("DAZEL_ENV_VARS", DEFAULT_ENV_VARS),
                 network=config.get("DAZEL_NETWORK", DEFAULT_NETWORK),
                 run_deps=config.get("DAZEL_RUN_DEPS", DEFAULT_RUN_DEPS),
                 docker_compose_file=config.get("DAZEL_DOCKER_COMPOSE_FILE",
@@ -327,7 +330,7 @@ class DockerInstance:
         logger.info("Starting docker container '%s'..." % self.instance_name)
         command = "%s stop %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
         command += "%s rm %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
-        command += "%s run -id --name=%s %s %s %s %s %s %s %s%s %s" % (
+        command += "%s run -id --name=%s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
@@ -336,6 +339,7 @@ class DockerInstance:
             ("-w %s" % os.path.realpath(self.directory)) if self.directory else "",
             self.volumes,
             self.ports,
+            self.env_vars,
             ("--net=%s" % self.network) if self.network else "",
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
@@ -428,6 +432,23 @@ class DockerInstance:
 
         # Find the real source and output directories.
         self.ports = '-p "%s"' % '" -p "'.join(ports)
+
+    def _add_env_vars(self, env_vars):
+        """Add the given env vars to the run string."""
+        # This can only be intentional in code, so ignore None volumes.
+        self.env_vars = ""
+        if not env_vars:
+            return
+
+        # DAZEL_ENV_VARS can be a python iterable or a comma-separated string.
+        if isinstance(env_vars, str):
+            env_vars = [p.strip() for p in env_vars.split(",")]
+        elif env_vars and not isinstance(env_vars, collections.Iterable):
+            raise RuntimeError("DAZEL_ENV_VARS must be comma-separated string "
+                               "or python iterable of strings")
+
+        # Find the real source and output directories.
+        self.env_vars = '-e "%s"' % '" -e "'.join(env_vars)
 
     def _add_run_deps(self, run_deps):
         """Adds the necessary runtime container dependencies to launch."""
