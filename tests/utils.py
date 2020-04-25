@@ -27,7 +27,7 @@ def create_instance(
         workspace_hex=dazel.DEFAULT_WORKSPACE_HEX,
         delegated_volume=dazel.DEFAULT_DELEGATED_VOLUME,
         user=dazel.DEFAULT_USER,
-):
+) -> dazel.DockerInstance:
     return dazel.DockerInstance(
         instance_name=instance_name,
         image_name=image_name,
