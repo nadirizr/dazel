@@ -160,4 +160,7 @@ The possible parameters to set are (with their defaults):
 
     # The user, in the same format as the --user option docker run and docker exec takes,
     # to use when starting the container and executing commands inside of the container
-    DAZEL_USER = ""
+    DAZEL_USER=""
+
+    # The GPUs to expose to the Docker container, "all" for every installed GPU
+    DAZEL_GPUS=""

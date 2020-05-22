@@ -41,7 +41,7 @@ DEFAULT_BAZEL_RC_FILE = ""
 DEFAULT_DOCKER_RUN_PRIVILEGED = False
 DEFAULT_DOCKER_MACHINE = None
 DEFAULT_WORKSPACE_HEX = False
-
+DEFAULT_GPUS=""
 
 logger = logging.getLogger("dazel")
 
@@ -59,7 +59,7 @@ class DockerInstance:
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
-                       workspace_hex, delegated_volume, user, docker_build_args):
+                       workspace_hex, delegated_volume, user, docker_build_args, gpus):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -100,6 +100,7 @@ class DockerInstance:
         self._add_env_vars(env_vars)
         self._add_run_deps(run_deps)
         self._add_compose_services(docker_compose_services)
+        self._add_gpus(gpus)
 
     @classmethod
     def from_config(cls):
@@ -140,6 +141,7 @@ class DockerInstance:
                 delegated_volume=config.get("DAZEL_DELEGATED_VOLUME", "DEFAULT_DELEGATED_VOLUME"),
                 user=config.get("DAZEL_USER", DEFAULT_USER),
                 docker_build_args=config.get("DAZEL_DOCKER_BUILD_ARGS", DEFAULT_DOCKER_BUILD_ARGS),
+                gpus=config.get("DAZEL_GPUS", DEFAULT_GPUS)
         )
 
     def send_command(self, args):
@@ -333,9 +335,10 @@ class DockerInstance:
         logger.info("Starting docker container '%s'..." % self.instance_name)
         command = "%s stop %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
         command += "%s rm %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
-        command += "%s run -id --name=%s %s %s %s %s %s %s %s %s%s %s" % (
+        command += "%s run -id --name=%s %s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
+            self.gpus,
             "--privileged" if self.docker_run_privileged else "",
             ("--user=%s" % self.user
              if self.user else ""),
@@ -435,6 +438,23 @@ class DockerInstance:
 
         # calculate the ports string
         self.ports = '-p "%s"' % '" -p "'.join(ports)
+
+    def _add_gpus(self, gpus):
+        """Add the given ports to the run string."""
+        # This can only be intentional in code, so disregard.
+        self.gpus = ""
+        if not gpus:
+            return
+
+        # DAZEL_PORTS can be a python iterable or a comma-separated string.
+        if isinstance(gpus, str):
+            gpus = [g.strip() for g in gpus.split(",")]
+        elif gpus and not isinstance(gpus, collections.Iterable):
+            raise RuntimeError("DAZEL_GPUS must be comma-separated string "
+                               "or python iterable of strings")
+
+        # calculate the gpus string
+        self.gpus = '--gpus %s' % ",".join(gpus)
 
     def _add_env_vars(self, env_vars):
         """Add the given env vars to the run string."""
