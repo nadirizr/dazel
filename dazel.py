@@ -26,6 +26,7 @@ DEFAULT_COMMAND = "/usr/bin/bazel"
 DEFAULT_VOLUMES = []
 DEFAULT_PORTS = []
 DEFAULT_ENV_VARS = []
+DEFAULT_GPUS = []
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
 DEFAULT_DOCKER_COMPOSE_FILE = ""
@@ -47,8 +48,6 @@ DEFAULT_DOCKER_MACHINE = None
 DEFAULT_WORKSPACE_HEX = False
 
 DOCKER_SPECIAL_NETWORK_NAMES = ["host", "bridge", "none"]
-
-DEFAULT_GPUS=""
 
 logger = logging.getLogger("dazel")
 
