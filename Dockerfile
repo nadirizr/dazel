@@ -1,7 +1,6 @@
 FROM debian:buster-slim
-MAINTAINER Nadir Izrael nadir.izr@gmail.com
 
-ENV BAZEL_VERSION 3.0.0
+ENV BAZEL_VERSION 3.5.0
 
 # Creating the man pages directory to deal with the slim variants not having it.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
