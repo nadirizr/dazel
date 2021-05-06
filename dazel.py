@@ -42,6 +42,8 @@ DEFAULT_DOCKER_RUN_PRIVILEGED = False
 DEFAULT_DOCKER_MACHINE = None
 DEFAULT_WORKSPACE_HEX = False
 
+DOCKER_SPECIAL_NETWORK_NAMES = ["host", "bridge", "none"]
+
 
 logger = logging.getLogger("dazel")
 
@@ -92,7 +94,7 @@ class DockerInstance:
             if os.path.exists(self.dockerfile):
                 self.image_name = "%s_%s" % (self.image_name, self.workspace_hex_digest)
 
-        if self.docker_compose_file:
+        if self.docker_compose_file and not self._is_predefined_network():
             self.network = "%s_%s" % (self.docker_compose_project_name, network)
 
         self._add_volumes(volumes)
@@ -195,7 +197,7 @@ class DockerInstance:
             # necessary ourselves.
 
             # Setup the network if necessary.
-            if not self._network_exists():
+            if not self._network_exists() and not self._is_predefined_network():
                 logger.info("Creating network: '%s'" % self.network)
                 rc = self._start_network()
             if rc:
@@ -263,6 +265,10 @@ class DockerInstance:
         command = "%s pull %s/%s" % (self.docker_command, self.repository, self.image_name)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
+
+    def _is_predefined_network(self):
+        """Checks if the network is one of the default existing docker network types"""
+        return self.network in DOCKER_SPECIAL_NETWORK_NAMES
 
     def _network_exists(self):
         """Checks if the network we need to use exists."""
