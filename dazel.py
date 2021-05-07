@@ -57,8 +57,8 @@ class DockerInstance:
     """
 
     def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
-                       repository, directory, command, volumes, ports, env_vars, network,
-                       run_deps, docker_compose_file, docker_compose_command,
+                       repository, directory, build_directory, command, volumes, ports,
+                       env_vars, network, run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
                        workspace_hex, delegated_volume, user, docker_build_args):
@@ -71,6 +71,7 @@ class DockerInstance:
         self.dockerfile = dockerfile
         self.repository = repository
         self.directory = directory
+        self.build_directory = build_directory
         self.command = command
         self.network = network
         self.docker_compose_file = docker_compose_file
@@ -115,6 +116,7 @@ class DockerInstance:
                 dockerfile=config.get("DAZEL_DOCKERFILE", DEFAULT_LOCAL_DOCKERFILE),
                 repository=config.get("DAZEL_REPOSITORY", DEFAULT_REMOTE_REPOSITORY),
                 directory=config.get("DAZEL_DIRECTORY", DEFAULT_DIRECTORY),
+                build_directory=config.get("DAZEL_BUILD_DIRECTORY", directory),
                 command=config.get("DAZEL_COMMAND", DEFAULT_COMMAND),
                 volumes=config.get("DAZEL_VOLUMES", DEFAULT_VOLUMES),
                 ports=config.get("DAZEL_PORTS", DEFAULT_PORTS),
@@ -253,7 +255,7 @@ class DockerInstance:
             raise RuntimeError("No Dockerfile to build the dazel image from.")
 
         command = "%s build %s -t %s/%s -f %s %s" % (
-            self.docker_command, self.docker_build_args, self.repository, self.image_name, self.dockerfile, self.directory)
+            self.docker_command, self.docker_build_args, self.repository, self.image_name, self.dockerfile, self.build_directory)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
 
