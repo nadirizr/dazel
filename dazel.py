@@ -1,6 +1,9 @@
 import hashlib
+import json
 import logging
 import os
+import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -32,10 +35,10 @@ DEFAULT_USER = ""
 DEFAULT_DOCKER_BUILD_ARGS = ""
 
 DEFAULT_DELEGATED_VOLUME = True
-DEFAULT_BAZEL_USER_OUTPUT_ROOT = os.path.expanduser("~/.cache/bazel/_bazel_%s" %
-                                                    os.environ.get("USER", "user"))
-TEMP_BAZEL_OUTPUT_USER_ROOT = ("/var/bazel/workspace/_bazel_%s" %
-                               os.environ.get("USER", "user"))
+ENV_USER = (os.environ.get("USERNAME", "user") if (sys.platform == "win32")
+            else os.environ.get("USER", "user"))
+DEFAULT_BAZEL_USER_OUTPUT_ROOT = os.path.expanduser("~/.cache/bazel/_bazel_%s" % ENV_USER)
+TEMP_BAZEL_OUTPUT_USER_ROOT = "/var/bazel/workspace/_bazel_%s" % ENV_USER
 DEFAULT_BAZEL_USER_OUTPUT_PATHS = ["external", "action_cache", "execroot"]
 DEFAULT_BAZEL_RC_FILE = ""
 DEFAULT_DOCKER_RUN_PRIVILEGED = False
@@ -85,6 +88,7 @@ class DockerInstance:
         self.delegated_volume_flag = ":delegated" if delegated_volume else ""
         self.user = user
         self.docker_build_args = docker_build_args
+        self.remote_directory = self._get_remote_directory(real_directory)
 
         if workspace_hex:
             self.workspace_hex_digest = hashlib.md5(real_directory.encode("ascii")).hexdigest()
@@ -146,7 +150,8 @@ class DockerInstance:
 
     def send_command(self, args):
         term_size = shutil.get_terminal_size()
-        command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s %s %s %s" % (
+
+        docker_exec_command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s" % (
             self.docker_command,
             term_size.columns, term_size.lines,
             os.environ.get("TERM", ""),
@@ -154,19 +159,42 @@ class DockerInstance:
             "--privileged" if self.docker_run_privileged else "",
             ("--user=%s" % self.user
              if self.user else ""),
-            self.instance_name,
+            self.instance_name)
+
+        if not self.user:
+            output_args = ("--output_user_root=%s --output_base=%s" % (
+                TEMP_BAZEL_OUTPUT_USER_ROOT, self.bazel_output_base)
+            if self.command and self.bazel_output_base else "")
+        else:
+            output_args = ("--output_user_root=%s" % (self.bazel_user_output_root)
+            if self.command and self.bazel_user_output_root else "")
+
+        command = "%s %s %s %s %s" % (
+            docker_exec_command,
             self.command,
             ("--bazelrc=%s" % self.bazel_rc_file
              if self.bazel_rc_file and self.command else ""),
-            ("--output_user_root=%s --output_base=%s" % (
-                TEMP_BAZEL_OUTPUT_USER_ROOT, self.bazel_output_base)
-             if self.command and self.bazel_output_base and not self.user
-             else  "--output_user_root=%s" % self.bazel_user_output_root
-                   if self.command and self.bazel_user_output_root
-                   else ""),
+            output_args,
             '"%s"' % '" "'.join(args))
-        command = self._with_docker_machine(command)
-        return os.WEXITSTATUS(os.system(command))
+
+        rc = os.system(command)
+
+        if sys.platform == "win32":
+            self._fix_win_symlink(docker_exec_command)
+            return rc
+        else:
+            return os.WEXITSTATUS(rc)
+
+    def _fix_win_symlink(self, docker_exec_command):
+        p = pathlib.Path(self.directory)
+        for path in list(p.glob('bazel-*')):
+            command = "{} realpath {}".format(docker_exec_command, str(path.name))
+            output = self._run_command(command).strip()
+            drive = path.drive
+            local_directory = pathlib.PureWindowsPath(path.drive).\
+                joinpath(pathlib.PurePosixPath(output))
+            path.unlink()
+            path.symlink_to(local_directory, target_is_directory=True)
 
     def start(self):
         """Starts the dazel docker container."""
@@ -213,39 +241,62 @@ class DockerInstance:
 
     def is_running(self):
         """Checks if the container is currently running."""
-        command = "%s ps | grep \"\\<%s\\>\" >/dev/null 2>&1" % (
-            self.docker_command, self.instance_name)
-        command = self._with_docker_machine(command)
+        command = self._with_docker_machine(
+            '{} ps  --no-trunc --filter name=^/{}$'.format(
+                self.docker_command,
+                self.instance_name))
+        output = self._run_command(command)
+        is_running = self._string_exists(self.instance_name, output)
 
         # If we have a directory, make sure the running container is mapped to
         # the same one (if not we need to create a new container mapped to the
         # correct folder).
-        if self.directory:
+        if self.directory and is_running:
             real_directory = os.path.realpath(self.directory)
-            command += (" && docker inspect \"%s\" | grep \"%s:%s\" >/dev/null 2>&1" %
-                        (self.instance_name, real_directory, real_directory))
+            dir_string = '{}:{}'.format(real_directory, self.remote_directory)
+            command = self._with_docker_machine(
+                '{} inspect --format="{}" "{}"'.format(
+                    self.docker_command,
+                    "{{json .HostConfig.Binds}}",
+                    self.instance_name))
+            output = self._run_command(command).strip()
+            binds = json.loads(output)
+            is_running = any(dir_string in b for b in binds)
 
         # If we have a network, make sure the running container is using the
         # correct network (if not we need to create a new container on the
         # correct network).
         # Note: with proper naming conventions this shouldn't happen much.
-        if self.network:
-            command += (" && docker inspect \"%s\" | grep '\"NetworkMode\": \"%s\"' >/dev/null 2>&1" %
-                        (self.instance_name, self.network))
+        if self.network and is_running:
+            command = self._with_docker_machine(
+                '{} inspect --format="{}" "{}"'.format(
+                    self.docker_command,
+                    "{{.HostConfig.NetworkMode}}",
+                    self.instance_name))
+            output = self._run_command(command).strip()
+            is_running = (output == self.network)
+        return is_running
 
-        rc = self._run_silent_command(command)
-        return (rc == 0)
+    def _run_silent_command(self, command, ignore_errors=False):
+        if ignore_errors:
+            return subprocess.call(command, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, shell=True)
+        else:
+            return subprocess.call(command, stdout=sys.stderr, shell=True)
 
-    def _run_silent_command(self, command):
-        return subprocess.call(command, stdout=sys.stderr, shell=True)
+    def _run_command(self, command):
+        return subprocess.check_output(command, shell=True).decode()
+
+    def _string_exists(self, string, output):
+        regex = re.compile(r"\b(?=\w)" + re.escape(string) + r"\b(?!\w)")
+        return any(regex.findall(output))
 
     def _image_exists(self):
         """Checks if the dazel image exists in the local repository."""
-        command = "%s images | grep \"\\<%s/%s\\>\" >/dev/null 2>&1" % (
-            self.docker_command, self.repository, self.image_name)
-        command = self._with_docker_machine(command)
-        rc = self._run_silent_command(command)
-        return (rc == 0)
+        command = self._with_docker_machine('{} images'.format(self.docker_command))
+        output = self._run_command(command)
+        return (self._string_exists(self.repository, output) and
+             self._string_exists(self.image_name, output))
 
     def _build(self):
         """Builds the dazel image from the local dockerfile."""
@@ -253,7 +304,8 @@ class DockerInstance:
             raise RuntimeError("No Dockerfile to build the dazel image from.")
 
         command = "%s build %s -t %s/%s -f %s %s" % (
-            self.docker_command, self.docker_build_args, self.repository, self.image_name, self.dockerfile, self.directory)
+            self.docker_command, self.docker_build_args, self.repository,
+            self.image_name, self.dockerfile, self.directory)
         command = self._with_docker_machine(command)
         return self._run_silent_command(command)
 
@@ -272,11 +324,9 @@ class DockerInstance:
 
     def _network_exists(self):
         """Checks if the network we need to use exists."""
-        command = "%s network ls | grep \"\\<%s\\>\" >/dev/null 2>&1" % (
-            self.docker_command, self.network)
-        command = self._with_docker_machine(command)
-        rc = self._run_silent_command(command)
-        return (rc == 0)
+        command = self._with_docker_machine('{} network ls'.format(self.docker_command))
+        output = self._run_command(command)
+        return self._string_exists(self.network, output)
 
     def _start_network(self):
         """Starts the docker network the container will use."""
@@ -337,15 +387,17 @@ class DockerInstance:
     def _run_container(self):
         """Runs the container itself."""
         logger.info("Starting docker container '%s'..." % self.instance_name)
-        command = "%s stop %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
-        command += "%s rm %s >/dev/null 2>&1 ; " % (self.docker_command, self.instance_name)
-        command += "%s run -id --name=%s %s %s %s %s %s %s %s %s%s %s" % (
+        command = "%s stop %s" % (self.docker_command, self.instance_name)
+        self._run_silent_command(self._with_docker_machine(command), ignore_errors=True)
+        command = "%s rm %s" % (self.docker_command, self.instance_name)
+        self._run_silent_command(self._with_docker_machine(command), ignore_errors=True)
+        command = "%s run -id --name=%s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
             ("--user=%s" % self.user
              if self.user else ""),
-            ("-w %s" % os.path.realpath(self.directory)) if self.directory else "",
+            ("-w %s" % self.remote_directory if self.remote_directory else ""),
             self.volumes,
             self.ports,
             self.env_vars,
@@ -353,8 +405,7 @@ class DockerInstance:
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
             self.run_command if self.run_command else "")
-        command = self._with_docker_machine(command)
-        rc = self._run_silent_command(command)
+        rc = self._run_silent_command(self._with_docker_machine(command))
         if rc:
             return rc
 
@@ -382,7 +433,7 @@ class DockerInstance:
         # Find the real source and output directories.
         real_directory = os.path.realpath(self.directory)
         volumes += [
-            "%s:%s" % (real_directory, real_directory),
+            "%s:%s" % (real_directory, self.remote_directory),
         ]
 
         # If the user hasn't explicitly set a DAZEL_BAZEL_USER_OUTPUT_ROOT for
@@ -390,6 +441,7 @@ class DockerInstance:
         # results on the host.
         real_bazelout = os.path.realpath(
             os.path.join(self.directory, "bazel-out", ".."))
+
         if not self.bazel_user_output_root and "/_bazel" in real_bazelout:
             parts = real_bazelout.split("/_bazel")
             first_part = parts[0]
@@ -399,20 +451,20 @@ class DockerInstance:
         # Add the bazel user output directory if it exists, or the real bazelout
         # directory if it does.
         if self.bazel_user_output_root:
-            self.bazel_output_base = os.path.realpath(
+            bazel_output_base = os.path.realpath(
                 os.path.join(self.bazel_user_output_root,
                              self.workspace_hex_digest))
+            self.bazel_output_base = self._get_remote_directory(bazel_output_base)
 
             user_output_paths = (DEFAULT_BAZEL_USER_OUTPUT_PATHS +
                                  [os.path.basename(real_directory)])
             for user_output_path in user_output_paths:
               real_user_output_path = os.path.realpath(
-                  os.path.join(self.bazel_output_base,
-                               user_output_path))
+                  os.path.join(bazel_output_base, user_output_path))
               if not os.path.isdir(real_user_output_path):
                   os.makedirs(real_user_output_path)
               volumes += ["%s:%s%s" % (real_user_output_path,
-                                       real_user_output_path,
+                                       self._get_remote_directory(real_user_output_path),
                                        self.delegated_volume_flag)]
         elif real_bazelout:
             volumes += ["%s:%s%s" % (real_bazelout, real_bazelout, self.delegated_volume_flag)]
@@ -424,6 +476,13 @@ class DockerInstance:
 
         # Calculate the volumes string.
         self.volumes = '-v "%s"' % '" -v "'.join(volumes)
+
+    def _get_remote_directory(self, local_directory):
+        remote_directory = local_directory
+        if (sys.platform == "win32"):
+            win_path = os.path.splitdrive(local_directory)[1]
+            remote_directory = str(pathlib.PureWindowsPath(win_path).as_posix())
+        return remote_directory
 
     def _add_ports(self, ports):
         """Add the given ports to the run string."""
@@ -507,9 +566,8 @@ class DockerInstance:
 
     def _command_exists(self, cmd):
         """Checks if a command exists on the system."""
-        command = "which %s >/dev/null 2>&1" % (cmd)
-        rc = self._run_silent_command(command)
-        return (rc == 0)
+        rc = shutil.which(cmd)
+        return (rc != None)
 
     def _with_docker_machine(self, cmd):
         if self.docker_machine is None or not self._command_exists("docker-machine"):
@@ -548,9 +606,13 @@ class DockerInstance:
         """
         directory = os.path.realpath(os.environ.get(
                 "DAZEL_DIRECTORY", DEFAULT_DIRECTORY))
-        while (directory and directory != "/" and
+        root_dir = os.path.join(os.path.splitdrive(os.getcwd())[0], os.sep)
+        while (directory and directory != root_dir and
                not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE))):
             directory = os.path.dirname(directory)
+        if not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE)):
+            print("ERROR: No {} file found!".format(BAZEL_WORKSPACE_FILE))
+            sys.exit(2)
         return directory
 
 

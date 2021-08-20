@@ -23,6 +23,8 @@ Running the command for the first time will start the container on it's own, and
 You can configure anything you need through the ".dazelrc" file in the same directory.
 Take a look at the configuration section for information on how to write one.
 
+It is also possible to run dazel from Windows environment towards a Posix Docker image. You just need to run dazel from a terminal started as Administrator to be able to create links.
+
 ## Installation
 
 ### Dependencies
