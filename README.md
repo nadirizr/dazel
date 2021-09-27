@@ -81,6 +81,8 @@ DAZEL_COMMAND="/usr/bin/bazel"
 # Add any additional volumes you want to share between the host and the docker
 # container, in the normal "hostdir:dockerdir" format.
 # This can be a python iterable, or a comma-separated string.
+# If working on windows add drive name to avoid conflicts, e.g.
+# DAZEL_VOLUMES = ["C:\\tmp:/C/tmp"]
 DAZEL_VOLUMES=[]
 
 # Add any ports you want to publish from the dazel container to the host, in the
