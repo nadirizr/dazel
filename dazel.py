@@ -89,7 +89,7 @@ class DockerInstance:
         self.delegated_volume_flag = ":delegated" if delegated_volume else ""
         self.user = user
         self.docker_build_args = docker_build_args
-        self.remote_directory = self._get_remote_directory(real_directory)
+        self.remote_directory = self._get_remote_directory(real_directory, add_drive=True)
 
         if workspace_hex:
             self.workspace_hex_digest = hashlib.md5(real_directory.encode("ascii")).hexdigest()
@@ -299,7 +299,7 @@ class DockerInstance:
         command = self._with_docker_machine(
             '%s image ls %s' % (self.docker_command, image))
         output = self._run_command(command)
-        exists = (len(output.splitlines()) > 1)
+        exists = len(output.splitlines()) > 1
         return exists
 
     def _build(self):
@@ -482,10 +482,13 @@ class DockerInstance:
         # Calculate the volumes string.
         self.volumes = '-v "%s"' % '" -v "'.join(volumes)
 
-    def _get_remote_directory(self, local_directory):
+    def _get_remote_directory(self, local_directory, add_drive=False):
         remote_directory = local_directory
         if (sys.platform == "win32"):
             win_path = os.path.splitdrive(local_directory)[1]
+            if add_drive:
+                drive = os.path.splitdrive(local_directory)[0].strip(":")
+                win_path = "/%s/%s" %(drive, win_path)
             remote_directory = str(pathlib.PureWindowsPath(win_path).as_posix())
         return remote_directory
 
@@ -616,7 +619,7 @@ class DockerInstance:
                not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE))):
             directory = os.path.dirname(directory)
         if not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE)):
-            raise FileNotFoundError("ERROR: No %s file found!" %(BAZEL_WORKSPACE_FILE))
+            raise FileNotFoundError("ERROR: No %s file found!" %BAZEL_WORKSPACE_FILE)
         else:
             return directory
 
