@@ -619,7 +619,7 @@ class DockerInstance:
                not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE))):
             directory = os.path.dirname(directory)
         if not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE)):
-            raise FileNotFoundError("ERROR: No %s file found!" %BAZEL_WORKSPACE_FILE)
+            raise FileNotFoundError("ERROR: No %s file found!" % BAZEL_WORKSPACE_FILE)
         else:
             return directory
 
