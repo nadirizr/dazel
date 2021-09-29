@@ -23,6 +23,8 @@ Running the command for the first time will start the container on it's own, and
 You can configure anything you need through the ".dazelrc" file in the same directory.
 Take a look at the configuration section for information on how to write one.
 
+It is also possible to run dazel from Windows environment towards a Posix Docker image. You just need to run dazel from a terminal started as Administrator to be able to create links.
+
 ## Installation
 
 ### Dependencies
@@ -79,6 +81,8 @@ DAZEL_COMMAND="/usr/bin/bazel"
 # Add any additional volumes you want to share between the host and the docker
 # container, in the normal "hostdir:dockerdir" format.
 # This can be a python iterable, or a comma-separated string.
+# If working on windows add drive name to avoid conflicts, e.g.
+# DAZEL_VOLUMES = ["C:\\tmp:/C/tmp"]
 DAZEL_VOLUMES=[]
 
 # Add any ports you want to publish from the dazel container to the host, in the
