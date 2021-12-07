@@ -192,11 +192,15 @@ class DockerInstance:
         for path in list(p.glob('bazel-*')):
             command = "%s realpath %s" % (
                 docker_exec_command, str(path.name))
-            output = self._run_command(command).strip()
-            drive = pathlib.PureWindowsPath(path.drive)
-            local_directory = drive.joinpath(pathlib.PurePosixPath(output))
-            path.unlink()
-            path.symlink_to(local_directory, target_is_directory=True)
+            try:
+                output = self._run_command(command).strip()
+            except subprocess.CalledProcessError:
+                logger.info("INFO: Skipping fixing symlink, it already exists.")
+            else:
+                drive = pathlib.PureWindowsPath(path.drive)
+                local_directory = drive.joinpath(pathlib.PurePosixPath(output))
+                path.unlink()
+                path.symlink_to(local_directory, target_is_directory=True)
 
     def start(self):
         """Starts the dazel docker container."""
@@ -244,7 +248,7 @@ class DockerInstance:
     def is_running(self):
         """Checks if the container is currently running."""
         command = self._with_docker_machine(
-            '%s ps  --no-trunc --filter name=^/%s$' % (
+            '%s ps  --no-trunc --filter name=^%s$' % (
                 self.docker_command,
                 self.instance_name))
         output = self._run_command(command)
@@ -273,10 +277,10 @@ class DockerInstance:
             command = self._with_docker_machine(
                 '%s inspect --format="%s" "%s"' % (
                     self.docker_command,
-                    "{{.HostConfig.NetworkMode}}",
+                    "{{.NetworkSettings.Networks}}",
                     self.instance_name))
             output = self._run_command(command).strip()
-            is_running = (output == self.network)
+            is_running = self.network in output
         return is_running
 
     def _run_silent_command(self, command, ignore_output=False):
