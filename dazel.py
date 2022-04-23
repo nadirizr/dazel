@@ -34,6 +34,7 @@ DEFAULT_DOCKER_COMPOSE_PROJECT_NAME = "dazel"
 DEFAULT_DOCKER_COMPOSE_SERVICES = ""
 DEFAULT_USER = ""
 DEFAULT_DOCKER_BUILD_ARGS = ""
+DEFAULT_DOCKER_EXEC_ARGS = ""
 
 DEFAULT_DELEGATED_VOLUME = True
 DEFAULT_BAZEL_USER_OUTPUT_ROOT = os.path.expanduser("~/.cache/bazel/_bazel_%s" %
@@ -65,7 +66,7 @@ class DockerInstance:
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
-                       workspace_hex, delegated_volume, user, docker_build_args):
+                       workspace_hex, delegated_volume, user, docker_build_args, docker_exec_args):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -89,6 +90,7 @@ class DockerInstance:
         self.delegated_volume_flag = ":delegated" if delegated_volume else ""
         self.user = user
         self.docker_build_args = docker_build_args
+        self.docker_exec_args = docker_exec_args
         self.remote_directory = self._get_remote_directory(real_directory, add_drive=True)
 
         if workspace_hex:
@@ -147,15 +149,17 @@ class DockerInstance:
                 delegated_volume=config.get("DAZEL_DELEGATED_VOLUME", "DEFAULT_DELEGATED_VOLUME"),
                 user=config.get("DAZEL_USER", DEFAULT_USER),
                 docker_build_args=config.get("DAZEL_DOCKER_BUILD_ARGS", DEFAULT_DOCKER_BUILD_ARGS),
+                docker_exec_args=config.get("DAZEL_DOCKER_EXEC_ARGS", DEFAULT_DOCKER_EXEC_ARGS),
         )
 
     def send_command(self, args):
         term_size = shutil.get_terminal_size()
 
-        docker_exec_command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s" % (
+        docker_exec_command = "%s exec -i -e COLUMNS=%s -e LINES=%s -e TERM=%s %s %s %s %s %s" % (
             self.docker_command,
             term_size.columns, term_size.lines,
             os.environ.get("TERM", ""),
+            self.docker_exec_args,
             "-t" if sys.stdout.isatty() else "",
             "--privileged" if self.docker_run_privileged else "",
             ("--user=%s" % self.user
