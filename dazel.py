@@ -61,11 +61,11 @@ class DockerInstance:
     """
 
     def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
-                       repository, directory, command, volumes, ports, env_vars, network,
+                       repository, directory, command, volumes, ports, env_vars, gpus, network,
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
-                       workspace_hex, delegated_volume, user, docker_build_args, gpus):
+                       workspace_hex, delegated_volume, user, docker_build_args):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -105,9 +105,9 @@ class DockerInstance:
         self._add_volumes(volumes)
         self._add_ports(ports)
         self._add_env_vars(env_vars)
+        self._add_gpus(gpus)
         self._add_run_deps(run_deps)
         self._add_compose_services(docker_compose_services)
-        self._add_gpus(gpus)
 
     @classmethod
     def from_config(cls):
@@ -125,6 +125,7 @@ class DockerInstance:
                 volumes=config.get("DAZEL_VOLUMES", DEFAULT_VOLUMES),
                 ports=config.get("DAZEL_PORTS", DEFAULT_PORTS),
                 env_vars=config.get("DAZEL_ENV_VARS", DEFAULT_ENV_VARS),
+                gpus=config.get("DAZEL_GPUS", DEFAULT_GPUS),
                 network=config.get("DAZEL_NETWORK", DEFAULT_NETWORK),
                 run_deps=config.get("DAZEL_RUN_DEPS", DEFAULT_RUN_DEPS),
                 docker_compose_file=config.get("DAZEL_DOCKER_COMPOSE_FILE",
@@ -148,7 +149,6 @@ class DockerInstance:
                 delegated_volume=config.get("DAZEL_DELEGATED_VOLUME", "DEFAULT_DELEGATED_VOLUME"),
                 user=config.get("DAZEL_USER", DEFAULT_USER),
                 docker_build_args=config.get("DAZEL_DOCKER_BUILD_ARGS", DEFAULT_DOCKER_BUILD_ARGS),
-                gpus=config.get("DAZEL_GPUS", DEFAULT_GPUS)
         )
 
     def send_command(self, args):
@@ -362,6 +362,7 @@ class DockerInstance:
                 command=None,
                 volumes=None,
                 ports=None,
+                gpus=None,
                 network=self.network,
                 run_deps=None,
                 docker_compose_file=None,
@@ -405,7 +406,6 @@ class DockerInstance:
         command = "%s run -id --name=%s %s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
-            self.gpus,
             "--privileged" if self.docker_run_privileged else "",
             ("--user=%s" % self.user
              if self.user else ""),
@@ -413,6 +413,7 @@ class DockerInstance:
             self.volumes,
             self.ports,
             self.env_vars,
+            self.gpus,
             ("--net=%s" % self.network) if self.network else "",
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
@@ -523,7 +524,7 @@ class DockerInstance:
         if not gpus:
             return
 
-        # DAZEL_PORTS can be a python iterable or a comma-separated string.
+        # DAZEL_GPUS can be a python iterable or a comma-separated string.
         if isinstance(gpus, str):
             gpus = [g.strip() for g in gpus.split(",")]
         elif gpus and not isinstance(gpus, collections.Iterable):
