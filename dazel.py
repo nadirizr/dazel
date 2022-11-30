@@ -26,6 +26,7 @@ DEFAULT_COMMAND = "/usr/bin/bazel"
 DEFAULT_VOLUMES = []
 DEFAULT_PORTS = []
 DEFAULT_ENV_VARS = []
+DEFAULT_GPUS = []
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
 DEFAULT_DOCKER_COMPOSE_FILE = ""
@@ -48,7 +49,6 @@ DEFAULT_WORKSPACE_HEX = False
 
 DOCKER_SPECIAL_NETWORK_NAMES = ["host", "bridge", "none"]
 
-
 logger = logging.getLogger("dazel")
 
 
@@ -61,7 +61,7 @@ class DockerInstance:
     """
 
     def __init__(self, instance_name, image_name, run_command, docker_command, dockerfile,
-                       repository, directory, command, volumes, ports, env_vars, network,
+                       repository, directory, command, volumes, ports, env_vars, gpus, network,
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
@@ -105,6 +105,7 @@ class DockerInstance:
         self._add_volumes(volumes)
         self._add_ports(ports)
         self._add_env_vars(env_vars)
+        self._add_gpus(gpus)
         self._add_run_deps(run_deps)
         self._add_compose_services(docker_compose_services)
 
@@ -124,6 +125,7 @@ class DockerInstance:
                 volumes=config.get("DAZEL_VOLUMES", DEFAULT_VOLUMES),
                 ports=config.get("DAZEL_PORTS", DEFAULT_PORTS),
                 env_vars=config.get("DAZEL_ENV_VARS", DEFAULT_ENV_VARS),
+                gpus=config.get("DAZEL_GPUS", DEFAULT_GPUS),
                 network=config.get("DAZEL_NETWORK", DEFAULT_NETWORK),
                 run_deps=config.get("DAZEL_RUN_DEPS", DEFAULT_RUN_DEPS),
                 docker_compose_file=config.get("DAZEL_DOCKER_COMPOSE_FILE",
@@ -360,6 +362,7 @@ class DockerInstance:
                 command=None,
                 volumes=None,
                 ports=None,
+                gpus=None,
                 network=self.network,
                 run_deps=None,
                 docker_compose_file=None,
@@ -400,7 +403,7 @@ class DockerInstance:
         self._run_silent_command(self._with_docker_machine(command), ignore_output=True)
         command = "%s rm %s" % (self.docker_command, self.instance_name)
         self._run_silent_command(self._with_docker_machine(command), ignore_output=True)
-        command = "%s run -id --name=%s %s %s %s %s %s %s %s %s%s %s" % (
+        command = "%s run -id --name=%s %s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
@@ -410,6 +413,7 @@ class DockerInstance:
             self.volumes,
             self.ports,
             self.env_vars,
+            self.gpus,
             ("--net=%s" % self.network) if self.network else "",
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
@@ -512,6 +516,23 @@ class DockerInstance:
 
         # calculate the ports string
         self.ports = '-p "%s"' % '" -p "'.join(ports)
+
+    def _add_gpus(self, gpus):
+        """Add the given ports to the run string."""
+        # This can only be intentional in code, so disregard.
+        self.gpus = ""
+        if not gpus:
+            return
+
+        # DAZEL_GPUS can be a python iterable or a comma-separated string.
+        if isinstance(gpus, str):
+            gpus = [g.strip() for g in gpus.split(",")]
+        elif gpus and not isinstance(gpus, collections.Iterable):
+            raise RuntimeError("DAZEL_GPUS must be comma-separated string "
+                               "or python iterable of strings")
+
+        # calculate the gpus string
+        self.gpus = '--gpus %s' % ",".join(gpus)
 
     def _add_env_vars(self, env_vars):
         """Add the given env vars to the run string."""

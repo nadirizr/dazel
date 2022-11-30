@@ -96,6 +96,9 @@ DAZEL_PORTS=[]
 # This can be a python iterable, or a comma-separated string.
 DAZEL_ENV_VARS=[]
 
+# The GPUs to expose to the Docker container, "all" for every installed GPU
+DAZEL_GPUS=""
+
 # The name of the network on which to load all run dependencies and dazel container.
 # If you are using a docker-compose.yml file to load the environment, this must
 # be the network name to which all of the necessary dependencies are connected.
@@ -148,5 +151,5 @@ DAZEL_DELEGATED_VOLUME=True
 
 # The user, in the same format as the --user option docker run and docker exec takes,
 # to use when starting the container and executing commands inside of the container
-DAZEL_USER = ""
+DAZEL_USER=""
 ```
