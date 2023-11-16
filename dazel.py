@@ -27,6 +27,7 @@ DEFAULT_VOLUMES = []
 DEFAULT_PORTS = []
 DEFAULT_ENV_VARS = []
 DEFAULT_GPUS = []
+DEFAULT_SHM_SIZE = ""
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
 DEFAULT_DOCKER_COMPOSE_FILE = ""
@@ -65,7 +66,7 @@ class DockerInstance:
                        run_deps, docker_compose_file, docker_compose_command,
                        docker_compose_project_name, docker_compose_services, bazel_user_output_root,
                        bazel_rc_file, docker_run_privileged, docker_machine, dazel_run_file,
-                       workspace_hex, delegated_volume, user, docker_build_args):
+                       workspace_hex, delegated_volume, user, docker_build_args, shm_size):
         real_directory = os.path.realpath(directory)
         self.workspace_hex_digest = ""
         self.instance_name = instance_name
@@ -89,6 +90,7 @@ class DockerInstance:
         self.delegated_volume_flag = ":delegated" if delegated_volume else ""
         self.user = user
         self.docker_build_args = docker_build_args
+        self.shm_size = shm_size
         self.remote_directory = self._get_remote_directory(real_directory, add_drive=True)
 
         if workspace_hex:
@@ -126,6 +128,7 @@ class DockerInstance:
                 ports=config.get("DAZEL_PORTS", DEFAULT_PORTS),
                 env_vars=config.get("DAZEL_ENV_VARS", DEFAULT_ENV_VARS),
                 gpus=config.get("DAZEL_GPUS", DEFAULT_GPUS),
+                shm_size=config.get("DAZEL_SHM_SIZE", DEFAULT_SHM_SIZE),
                 network=config.get("DAZEL_NETWORK", DEFAULT_NETWORK),
                 run_deps=config.get("DAZEL_RUN_DEPS", DEFAULT_RUN_DEPS),
                 docker_compose_file=config.get("DAZEL_DOCKER_COMPOSE_FILE",
@@ -363,6 +366,7 @@ class DockerInstance:
                 volumes=None,
                 ports=None,
                 gpus=None,
+                shm_size=None,
                 network=self.network,
                 run_deps=None,
                 docker_compose_file=None,
@@ -403,7 +407,7 @@ class DockerInstance:
         self._run_silent_command(self._with_docker_machine(command), ignore_output=True)
         command = "%s rm %s" % (self.docker_command, self.instance_name)
         self._run_silent_command(self._with_docker_machine(command), ignore_output=True)
-        command = "%s run -id --name=%s %s %s %s %s %s %s %s %s %s%s %s" % (
+        command = "%s run -id --name=%s %s %s %s %s %s %s %s %s %s %s%s %s" % (
             self.docker_command,
             self.instance_name,
             "--privileged" if self.docker_run_privileged else "",
@@ -414,6 +418,7 @@ class DockerInstance:
             self.ports,
             self.env_vars,
             self.gpus,
+            ("--shm-size=%s" % self.shm_size) if self.shm_size else "",
             ("--net=%s" % self.network) if self.network else "",
             ("%s/" % self.repository) if self.repository else "",
             self.image_name,
