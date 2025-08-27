@@ -89,8 +89,11 @@ The possible parameters to set are (with their defaults):
     # The repository to pull the dazel image from.
     DAZEL_REPOSITORY="dazel"
 
-    # The directory to build the dazel image in.
+    # The directory containing the bazel workspace
     DAZEL_DIRECTORY=$PWD
+
+    # The directory to build the docker image in
+    DAZEL_BUILD_DIRECTORY=$PWD
 
     # The command to run inside the container.
     # NOTE: You should add flags to the .bazelrc file instead of here, since it is
