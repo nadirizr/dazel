@@ -14,6 +14,7 @@ import collections
 DAZEL_RC_FILE = ".dazelrc"
 DAZEL_RUN_FILE = ".dazel_run"
 BAZEL_WORKSPACE_FILE = "WORKSPACE"
+BAZEL_MODULE_FILE = "MODULE.bazel"
 
 DEFAULT_INSTANCE_NAME = "dazel"
 DEFAULT_IMAGE_NAME = "dazel"
@@ -27,7 +28,7 @@ DEFAULT_VOLUMES = []
 DEFAULT_PORTS = []
 DEFAULT_ENV_VARS = []
 DEFAULT_GPUS = []
-DEFAULT_PLATFORM = "" 
+DEFAULT_PLATFORM = ""
 DEFAULT_SHM_SIZE = ""
 DEFAULT_NETWORK = "dazel"
 DEFAULT_RUN_DEPS = []
@@ -651,10 +652,11 @@ class DockerInstance:
                 "DAZEL_DIRECTORY", DEFAULT_DIRECTORY))
         root_dir = os.path.join(os.path.splitdrive(os.getcwd())[0], os.sep)
         while (directory and directory != root_dir and
-               not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE))):
+               not (os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE)) or
+               os.path.exists(os.path.join(directory, BAZEL_MODULE_FILE)))):
             directory = os.path.dirname(directory)
-        if not os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE)):
-            raise FileNotFoundError("ERROR: No %s file found!" % BAZEL_WORKSPACE_FILE)
+        if not (os.path.exists(os.path.join(directory, BAZEL_WORKSPACE_FILE)) or os.path.exists(os.path.join(directory, BAZEL_MODULE_FILE))):
+            raise FileNotFoundError("ERROR: No workspace or module file found!")
         else:
             return directory
 
